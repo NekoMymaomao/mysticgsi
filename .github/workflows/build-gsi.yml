@@ -96,11 +96,68 @@ jobs:
           ROM_NAME: ${{ github.event.inputs.rom_name }}
           ROM_TYPE: ${{ github.event.inputs.rom_type }}
         run: |
+          set -e
+          BUILD_LOG="tmp/${{ github.event.inputs.rom_name }}/build.log"
+          mkdir -p "$(dirname "$BUILD_LOG")"
+
+          # Run build and capture full output for diagnostics
           python cli.py build "$ROM_NAME" "$FIRMWARE_FILE" \
             --type "$ROM_TYPE" \
             ${{ github.event.inputs.compress == true && '--compress' || '' }} \
             ${{ github.event.inputs.no_merge == true && '--no-merge' || '' }} \
-            ${{ github.event.inputs.no_debloat == true && '--no-debloat' || '' }}
+            ${{ github.event.inputs.no_debloat == true && '--no-debloat' || '' }} \
+            2>&1 | tee "$BUILD_LOG"
+
+          echo "Build completed successfully"
+
+      - name: Diagnose build failure (if any)
+        if: failure()
+        env:
+          ROM_NAME: ${{ github.event.inputs.rom_name }}
+          FIRMWARE_NAME: ${{ env.FIRMWARE_NAME }}
+        run: |
+          WORK_DIR="tmp/$ROM_NAME"
+          BUILD_LOG="$WORK_DIR/build.log"
+
+          echo "=== Build failed — diagnosing ==="
+
+          # Show extracted partitions
+          echo "=== Extracted partitions in $WORK_DIR/images/ ==="
+          ls -la "$WORK_DIR/images/" 2>/dev/null || echo "(no images dir)"
+
+          # Check for product partition
+          if [ -d "$WORK_DIR/images/product" ]; then
+            echo "✓ product partition found"
+          else
+            echo "✗ product partition NOT found"
+            echo ""
+            echo "This firmware does not have a separate 'product' partition."
+            echo "MysticGSI requires a product partition to build a GSI."
+            echo "The 'product' partition typically contains app data and"
+            echo "device-specific configuration separate from system/vendor."
+            echo ""
+            echo "Common causes:"
+            echo "  - Older/Lower-end devices merge product into system"
+            echo "  - Some OEM firmware packages skip the product partition"
+            echo "  - The firmware URL may point to a partial/incomplete package"
+            echo ""
+            echo "Solutions:"
+            echo "  1. Try a different firmware version that includes product.img"
+            echo "  2. Check if there's a full OTA zip vs a slim/fastboot package"
+            echo "  3. Look for 'complete' or 'full' firmware variants"
+          fi
+
+          # Show full build log tail
+          echo ""
+          echo "=== Last 50 lines of build log ==="
+          tail -50 "$BUILD_LOG" 2>/dev/null || echo "(no build log)"
+
+          echo ""
+          echo "=== Firmware info ==="
+          echo "ROM name: ${{ github.event.inputs.rom_name }}"
+          echo "ROM type: ${{ github.event.inputs.rom_type }}"
+          echo "Firmware: $FIRMWARE_NAME"
+          exit 1
 
       - name: Clean up original firmware package after extraction
         env:

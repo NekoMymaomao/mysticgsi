@@ -70,12 +70,14 @@ class SettingsProp:
 
     def get_sdk_version(self) -> int:
         raw = self.first_of(
-            "ro.system.build.version.sdk", "ro.product.build.version.sdk"
+            "ro.system.build.version.sdk",
+            "ro.product.build.version.sdk",
+            "ro.build.version.sdk",
         )
         if raw is None:
             raise ValueError(
                 "build.prop has no SDK version (ro.system.build.version.sdk"
-                " / ro.product.build.version.sdk)"
+                " / ro.product.build.version.sdk / ro.build.version.sdk)"
             )
         return int(raw)
 

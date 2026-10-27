@@ -32,7 +32,11 @@ def apply_generic_patches(ctx: PatchContext) -> None:
             os.path.join(patch_path, "system.prop"), system_prop_path
         )
 
-    if os.path.exists(os.path.join(patch_path, "product.prop")):
+    # Only append product.prop when product is a separate partition
+    if (
+        os.path.exists(os.path.join(patch_path, "product.prop"))
+        and product_prop_path != system_prop_path
+    ):
         fsops.append_file(
             os.path.join(patch_path, "product.prop"), product_prop_path
         )
@@ -112,7 +116,8 @@ def apply_rom_patches(ctx: PatchContext) -> None:
         except Exception as e:
             ctx.log(f"Error reading {config_path}: {e}")
 
-    if not config.get("no_device_overlays", False):
+    # Only apply device overlays when product is a separate partition
+    if not config.get("no_device_overlays", False) and product != system:
         overlay_dir = os.path.join(
             ctx.patches_dir,
             "all",
@@ -139,7 +144,8 @@ def apply_rom_patches(ctx: PatchContext) -> None:
         fsops.append_file(system_prop_file, system_prop.path)
 
     product_prop_file = os.path.join(rom_patches_dir, "product.prop")
-    if os.path.exists(product_prop_file) and product_prop:
+    # Skip product.prop append when product is merged into system
+    if os.path.exists(product_prop_file) and product_prop and product != system:
         fsops.append_file(product_prop_file, product_prop.path)
 
     system_ext_prop_file = os.path.join(rom_patches_dir, "system_ext.prop")

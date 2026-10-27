@@ -169,7 +169,7 @@ def patch_selinux(ctx: PatchContext) -> None:
 
     system = ctx.partition_dirs["system"]
     system_ext = ctx.partition_dirs.get("system_ext")
-    product = ctx.partition_dirs["product"]
+    product = ctx.partition_dirs.get("product")
 
     plat_property_contexts = os.path.join(
         system, "etc/selinux/plat_property_contexts"
@@ -190,7 +190,10 @@ def patch_selinux(ctx: PatchContext) -> None:
                 i,
             )
 
-        if os.path.exists(os.path.join(product, "etc/selinux")):
+        # Skip product selinux cleanup if product is merged into system
+        if product and product != system and os.path.exists(
+            os.path.join(product, "etc/selinux")
+        ):
             fsops.drop_lines(
                 os.path.join(product, "etc/selinux/product_property_contexts"),
                 i,
@@ -236,22 +239,24 @@ def clean_build_props(ctx: PatchContext) -> None:
     ):
         fsops.drop_lines(system_prop_path, prop)
 
-    for prop in (
-        "media.settings.xml",
-        "ro.product.ab_ota_partitions",
-        "ro.sys.sdcardfs",
-        "persist.vendor.debug.sensors.accel_cal",
-        "persist.vendor.testing_battery_profile",
-        "masterclear.allow_retain_esim_profiles_after_fdr",
-        "ro.postinstall.fstab.prefix",
-        "ro.gfx.driver.1",
-        "graphics.gpu.profiler.support",
-        "graphics.gpu.profiler.vulkan_layer_apk",
-        "ro.vendor.camera.extensions.package",
-        "ro.vendor.camera.extensions.service",
-        "ro.frp.pst",
-    ):
-        fsops.drop_lines(product_prop_path, prop)
+    # Only clean product-specific props when product is a separate partition
+    if product_prop_path != system_prop_path:
+        for prop in (
+            "media.settings.xml",
+            "ro.product.ab_ota_partitions",
+            "ro.sys.sdcardfs",
+            "persist.vendor.debug.sensors.accel_cal",
+            "persist.vendor.testing_battery_profile",
+            "masterclear.allow_retain_esim_profiles_after_fdr",
+            "ro.postinstall.fstab.prefix",
+            "ro.gfx.driver.1",
+            "graphics.gpu.profiler.support",
+            "graphics.gpu.profiler.vulkan_layer_apk",
+            "ro.vendor.camera.extensions.package",
+            "ro.vendor.camera.extensions.service",
+            "ro.frp.pst",
+        ):
+            fsops.drop_lines(product_prop_path, prop)
 
     if system_ext_prop:
         fsops.drop_lines(system_ext_prop.path, "media.settings.xml")
@@ -269,6 +274,7 @@ def detect_64bit_only(ctx: PatchContext) -> None:
         os.path.join(ctx.partition_dirs[p], "bin")
         for p in ("system_ext", "product")
         if p in ctx.partition_dirs
+        and ctx.partition_dirs[p] != system  # skip if merged into system
     ]
     ctx.programs_32bit_only = find_32bit_only_programs(bin_dirs)
     if ctx.programs_32bit_only:
@@ -290,8 +296,12 @@ def put_mystic_build_display_id(ctx: PatchContext) -> None:
         "ro.build.id",
     ]
 
+    # When product is merged into system, skip duplicate processing
+    seen = set()
     for prop in (system_prop, product_prop):
-        # A product build.prop may be empty when the ROM ships none.
+        if not prop or prop.path in seen:
+            continue
+        seen.add(prop.path)
         keys = prop.exists_any(props)
         if keys:
             fsops.set_props(prop.path, keys[0], "Ported.Using.MysticGSI.Tool")
@@ -338,11 +348,13 @@ def strip_reboot_on_failure(ctx: PatchContext) -> None:
 
 
 def drop_selinux_mappings(ctx: PatchContext) -> None:
-    product = ctx.partition_dirs["product"]
+    product = ctx.partition_dirs.get("product")
     system_ext = ctx.partition_dirs.get("system_ext")
     selinux_mapping_path = "etc/selinux/mapping/*"
 
-    fsops.rmrf(os.path.join(product, selinux_mapping_path))
+    # Only clean product mappings when product is a separate partition
+    if product and product != ctx.system_root():
+        fsops.rmrf(os.path.join(product, selinux_mapping_path))
     if system_ext:
         fsops.rmrf(os.path.join(system_ext, selinux_mapping_path))
 

@@ -144,12 +144,20 @@ class PatchContext:
 
     def resolve_partitions(self) -> None:
         product = self._find_partition_dir("product")
-        if not product:
-            raise RuntimeError("product not found")
-        self.partition_dirs["product"] = product
-        # Patch sets append here even when the ROM ships no product props.
-        if not self.partition_prop("product"):
-            fsops.touch(os.path.join(product, "etc/build.prop"))
+        if product:
+            self.partition_dirs["product"] = product
+            # Patch sets append here even when the ROM ships no product props.
+            if not self.partition_prop("product"):
+                fsops.touch(os.path.join(product, "etc/build.prop"))
+        else:
+            # Some ROMs (e.g. older/low-end devices) merge product into
+            # system and ship no separate product partition. Fall back to
+            # system so downstream patching still works.
+            self.partition_dirs["product"] = self.system_root()
+            self.log(
+                "No separate product partition found; using system root "
+                "as product fallback"
+            )
 
         system_ext = self._find_partition_dir("system_ext")
         if system_ext:
